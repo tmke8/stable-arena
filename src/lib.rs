@@ -591,7 +591,115 @@ impl DroplessArena {
 pub struct IsCopy;
 pub struct IsNotCopy;
 
-#[macro_use]
-mod macros;
+/// Declare an `Arena` containing one dropless arena and many typed arenas (the
+/// types of the typed arenas are specified by the arguments).
+///
+/// There are three cases of interest.
+/// - Types that are `Copy`: these need not be specified in the arguments. They
+///   will use the `DroplessArena`.
+/// - Types that are `!Copy` and `!Drop`: these must be specified in the
+///   arguments. An empty `TypedArena` will be created for each one, but the
+///   `DroplessArena` will always be used and the `TypedArena` will stay empty.
+///   This is odd but harmless, because an empty arena allocates no memory.
+/// - Types that are `!Copy` and `Drop`: these must be specified in the
+///   arguments. The `TypedArena` will be used for them.
+///
+#[macro_export]
+macro_rules! declare_arena {
+    ([$($name:ident: $ty:ty,)*]) => {
+        #[derive(Default)]
+        pub struct Arena {
+            pub dropless: $crate::DroplessArena,
+            $($name: $crate::TypedArena<$ty>,)*
+        }
+
+        pub trait ArenaAllocatable<C = stable_arena::IsNotCopy>: Sized {
+            #[allow(clippy::mut_from_ref)]
+            fn allocate_on(self, arena: &Arena) -> &mut Self;
+            #[allow(clippy::mut_from_ref)]
+            fn allocate_from_iter(
+                arena: &Arena,
+                iter: impl ::std::iter::IntoIterator<Item = Self>,
+            ) -> &mut [Self];
+        }
+
+        // Any type that impls `Copy` can be arena-allocated in the `DroplessArena`.
+        impl<T: Copy> ArenaAllocatable<stable_arena::IsCopy> for T {
+            #[inline]
+            #[allow(clippy::mut_from_ref)]
+            fn allocate_on(self, arena: &Arena) -> &mut Self {
+                arena.dropless.alloc(self)
+            }
+            #[inline]
+            #[allow(clippy::mut_from_ref)]
+            fn allocate_from_iter(
+                arena: &Arena,
+                iter: impl ::std::iter::IntoIterator<Item = Self>,
+            ) -> &mut [Self] {
+                arena.dropless.alloc_from_iter(iter)
+            }
+        }
+        $(
+            impl ArenaAllocatable<stable_arena::IsNotCopy> for $ty {
+                #[inline]
+                fn allocate_on(self, arena: &Arena) -> &mut Self {
+                    if !::std::mem::needs_drop::<Self>() {
+                        arena.dropless.alloc(self)
+                    } else {
+                        arena.$name.alloc(self)
+                    }
+                }
+
+                #[inline]
+                #[allow(clippy::mut_from_ref)]
+                fn allocate_from_iter(
+                    arena: &Arena,
+                    iter: impl ::std::iter::IntoIterator<Item = Self>,
+                ) -> &mut [Self] {
+                    if !::std::mem::needs_drop::<Self>() {
+                        arena.dropless.alloc_from_iter(iter)
+                    } else {
+                        arena.$name.alloc_from_iter(iter)
+                    }
+                }
+            }
+        )*
+
+        impl Arena {
+            #[inline]
+            #[allow(clippy::mut_from_ref)]
+            pub fn alloc<T: ArenaAllocatable<C>, C>(&self, value: T) -> &mut T {
+                value.allocate_on(self)
+            }
+
+            // Any type that impls `Copy` can have slices be arena-allocated in the `DroplessArena`.
+            #[inline]
+            #[allow(clippy::mut_from_ref)]
+            pub fn alloc_slice<T: ::std::marker::Copy>(&self, value: &[T]) -> &mut [T] {
+                if value.is_empty() {
+                    return &mut [];
+                }
+                self.dropless.alloc_slice(value)
+            }
+
+            #[inline]
+            pub fn alloc_str(&self, string: &str) -> &str {
+                if string.is_empty() {
+                    return "";
+                }
+                self.dropless.alloc_str(string)
+            }
+
+            #[allow(clippy::mut_from_ref)]
+            pub fn alloc_from_iter<T: ArenaAllocatable<C>, C>(
+                &self,
+                iter: impl ::std::iter::IntoIterator<Item = T>,
+            ) -> &mut [T] {
+                T::allocate_from_iter(self, iter)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
