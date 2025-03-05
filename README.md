@@ -1,1 +1,1 @@
-# stable_arena
+# stable-arena
