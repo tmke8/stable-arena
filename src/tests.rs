@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-use super::{DroplessArena, TypedArena};
+use super::{DroplessArena, TypedArena, declare_arena};
 
 #[allow(dead_code)]
 #[derive(Debug, Eq, PartialEq)]
@@ -34,42 +34,50 @@ fn test_unused() {
     assert!(arena.chunks.borrow().is_empty());
 }
 
-// #[test]
-// fn test_arena_alloc_nested() {
-//     struct Inner {
-//         value: u8,
-//     }
-//     struct Outer<'a> {
-//         inner: &'a Inner,
-//     }
-//     enum EI<'e> {
-//         I(Inner),
-//         O(Outer<'e>),
-//     }
-//
-//     struct Wrap<'a>(TypedArena<EI<'a>>);
-//
-//     impl<'a> Wrap<'a> {
-//         fn alloc_inner<F: Fn() -> Inner>(&self, f: F) -> &Inner {
-//             match self.0.alloc(EI::I(f())) {
-//                 EI::I(i) => i,
-//                 _ => panic!("mismatch"),
-//             }
-//         }
-//         fn alloc_outer<F: Fn() -> Outer<'a>>(&self, f: F) -> &Outer<'_> {
-//             match self.0.alloc(EI::O(f())) {
-//                 EI::O(o) => o,
-//                 _ => panic!("mismatch"),
-//             }
-//         }
-//     }
-//
-//     let arena = Wrap(TypedArena::default());
-//
-//     let result = arena.alloc_outer(|| Outer { inner: arena.alloc_inner(|| Inner { value: 10 }) });
-//
-//     assert_eq!(result.inner.value, 10);
-// }
+#[test]
+fn test_unused_dropless() {
+    let arena = DroplessArena::default();
+    assert!(arena.chunks.borrow().is_empty());
+}
+
+#[test]
+fn test_arena_alloc_nested() {
+    struct Inner {
+        value: u8,
+    }
+    struct Outer<'a> {
+        inner: &'a Inner,
+    }
+    enum EI<'e> {
+        I(Inner),
+        O(Outer<'e>),
+    }
+
+    struct Wrap(DroplessArena);
+
+    impl Wrap {
+        fn alloc_inner<F: Fn() -> Inner>(&self, f: F) -> &Inner {
+            match self.0.alloc(EI::I(f())) {
+                EI::I(i) => i,
+                _ => panic!("mismatch"),
+            }
+        }
+        fn alloc_outer<'a, F: Fn() -> Outer<'a>>(&'a self, f: F) -> &'a Outer<'a> {
+            match self.0.alloc(EI::O(f())) {
+                EI::O(o) => o,
+                _ => panic!("mismatch"),
+            }
+        }
+    }
+
+    let arena = Wrap(DroplessArena::default());
+
+    let result = arena.alloc_outer(|| Outer {
+        inner: arena.alloc_inner(|| Inner { value: 10 }),
+    });
+
+    assert_eq!(result.inner.value, 10);
+}
 
 #[test]
 fn test_copy() {
@@ -245,19 +253,19 @@ fn test_typed_arena_drop_small_count() {
 //     })
 // }
 
-struct WithReference<'a> {
+struct WithInternalRef<'a> {
     number: u32,
-    next: Option<&'a WithReference<'a>>,
+    next: Option<&'a WithInternalRef<'a>>,
 }
 
 #[test]
 fn test_dropless_with_reference() {
     let arena = DroplessArena::default();
-    let second = arena.alloc(WithReference {
+    let second = arena.alloc(WithInternalRef {
         number: 2,
         next: None,
     });
-    let first = arena.alloc(WithReference {
+    let first = arena.alloc(WithInternalRef {
         number: 1,
         next: Some(second),
     });
@@ -277,4 +285,59 @@ fn test_dropless_str() {
     let arena = DroplessArena::default();
     let string = arena.alloc_str("hello world");
     assert_eq!(string, "hello world");
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct NotCopyNotDrop {
+    value: i32,
+}
+
+#[test]
+fn test_declare_arena() {
+    declare_arena!([
+        ints: NotCopyNotDrop,
+        boxes: Box<i32>,
+    ]);
+
+    let arena = Arena::default();
+
+    let num = arena.alloc(1); // `Copy` types can be allocated without needing to be declared.
+    assert_eq!(num, &1);
+
+    let slice = arena.alloc_slice(&[10, 15, 17]);
+    assert_eq!(slice, &[10, 15, 17]);
+
+    let val = arena.alloc(NotCopyNotDrop { value: 2 });
+    assert_eq!(val.value, 2);
+
+    let slice = arena.alloc_from_iter((1..3).into_iter().map(|n| NotCopyNotDrop { value: n }));
+    assert_eq!(
+        slice,
+        &[NotCopyNotDrop { value: 1 }, NotCopyNotDrop { value: 2 }]
+    );
+
+    let boxed = arena.alloc(Box::new(2));
+    assert_eq!(boxed, &Box::new(2));
+
+    let string = arena.alloc_str("hello world");
+    assert_eq!(string, "hello world");
+}
+
+struct CycleParticipant<'a> {
+    other: Cell<Option<&'a CycleParticipant<'a>>>,
+}
+
+#[test]
+fn test_cycle() {
+    let arena = DroplessArena::default();
+
+    let a = arena.alloc(CycleParticipant {
+        other: Cell::new(None),
+    });
+    let b = arena.alloc(CycleParticipant {
+        other: Cell::new(None),
+    });
+
+    a.other.set(Some(b));
+    b.other.set(Some(a));
 }

@@ -1,7 +1,13 @@
 [package]
 name = "stable-arena"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+authors = [
+    "The Rust Project Developers",
+    "Thomas Kehrenberg <tmke8@posteo.net>",
+]
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 smallvec = { version = "1.8.1", features = ["union"] }

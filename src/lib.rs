@@ -5,12 +5,71 @@
 //! of individual objects while the arena itself is still alive. The benefit
 //! of an arena is very fast allocation; just a pointer bump.
 //!
-//! This crate implements several kinds of arena.
+//! This crate implements two kinds of arena.
+//!
+//! # For types that need to be dropped: `TypedArena`
+//! `TypedArena` is used like this:
+//!
+//! ```rust
+//! use stable_arena::TypedArena;
+//!
+//! let arena: TypedArena<Box<i32>> = TypedArena::default();
+//! let x = arena.alloc(Box::new(42));
+//! assert_eq!(**x, 42);
+//! ```
+//!
+//! (Of course, storing a `Box` in an arena defeats the purpose of the arena,
+//! but you get the idea.)
+//!
+//! A `TypedArena` can only hold objects of one type. It will call `drop` on
+//! all objects when the arena itself is dropped.
+//!
+//! # For types that don't need to be dropped: `DroplessArena`
+//! The advantage of a `DroplessArena` is that it can hold objects of any type.
+//! The disadvantage is that it will not call `drop` on any of them when it is
+//! dropped.
+//!
+//! It can be used like this:
+//!
+//! ```rust
+//! use stable_arena::DroplessArena;
+//!
+//! let arena = DroplessArena::default();
+//! let x = arena.alloc(42);
+//! assert_eq!(*x, 42);
+//! let y = arena.alloc_str("hello");
+//! assert_eq!(y, "hello");
+//! ```
+//!
+//! You can also create reference cycles within a `DroplessArena` and it's
+//! still perfectly safe; the memory will be freed when the arena is dropped.
+//!
+//! ```rust
+//! use std::cell::Cell;
+//! use stable_arena::DroplessArena;
+//!
+//! struct CycleParticipant<'arena> {
+//!     other: Cell<Option<&'arena CycleParticipant<'arena>>>,
+//! }
+//!
+//! let arena = DroplessArena::default();
+//!
+//! let a = arena.alloc(CycleParticipant {
+//!     other: Cell::new(None),
+//! });
+//! let b = arena.alloc(CycleParticipant {
+//!     other: Cell::new(None),
+//! });
+//!
+//! a.other.set(Some(b));
+//! b.other.set(Some(a));
+//! ```
 
 #![allow(clippy::mut_from_ref)] // Arena allocators are one place where this pattern is fine.
 
 use std::alloc::Layout;
 use std::cell::{Cell, RefCell};
+use std::hint::assert_unchecked;
 use std::marker::PhantomData;
 use std::mem::{self, MaybeUninit};
 use std::ptr::{self, NonNull};
@@ -86,6 +145,10 @@ impl<T> ArenaChunk<T> {
     }
 }
 
+/// Drops the contained values in place.
+///
+/// The definition corresponds to the unstable method in the standard library.
+/// See https://github.com/rust-lang/rust/issues/63569 for the tracking issue.
 unsafe fn assume_init_drop<T>(this: &mut [MaybeUninit<T>]) {
     if !this.is_empty() {
         // SAFETY: the caller must guarantee that every element of `self`
@@ -415,12 +478,8 @@ impl DroplessArena {
             // DROPLESS_ALIGNMENT.
             let bytes = align_up(layout.size(), DROPLESS_ALIGNMENT);
 
-            // Assert that `end` is aligned to DROPLESS_ALIGNMENT.
-            debug_assert_eq!(
-                end,
-                align_down(end, DROPLESS_ALIGNMENT),
-                "end address is not properly aligned"
-            );
+            // Tell LLVM that `end` is aligned to DROPLESS_ALIGNMENT.
+            unsafe { assert_unchecked(end == align_down(end, DROPLESS_ALIGNMENT)) };
 
             if let Some(sub) = end.checked_sub(bytes) {
                 let new_end = align_down(sub, layout.align());
@@ -613,7 +672,7 @@ macro_rules! declare_arena {
             $($name: $crate::TypedArena<$ty>,)*
         }
 
-        pub trait ArenaAllocatable<C = stable_arena::IsNotCopy>: Sized {
+        pub trait ArenaAllocatable<C = $crate::IsNotCopy>: Sized {
             #[allow(clippy::mut_from_ref)]
             fn allocate_on(self, arena: &Arena) -> &mut Self;
             #[allow(clippy::mut_from_ref)]
@@ -624,7 +683,7 @@ macro_rules! declare_arena {
         }
 
         // Any type that impls `Copy` can be arena-allocated in the `DroplessArena`.
-        impl<T: Copy> ArenaAllocatable<stable_arena::IsCopy> for T {
+        impl<T: Copy> ArenaAllocatable<$crate::IsCopy> for T {
             #[inline]
             #[allow(clippy::mut_from_ref)]
             fn allocate_on(self, arena: &Arena) -> &mut Self {
@@ -640,7 +699,7 @@ macro_rules! declare_arena {
             }
         }
         $(
-            impl ArenaAllocatable<stable_arena::IsNotCopy> for $ty {
+            impl ArenaAllocatable<$crate::IsNotCopy> for $ty {
                 #[inline]
                 fn allocate_on(self, arena: &Arena) -> &mut Self {
                     if !::std::mem::needs_drop::<Self>() {
