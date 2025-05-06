@@ -24,8 +24,8 @@ unsafe impl<#[may_dangle] T> Drop for TypedArena<T> {
 However, `#[may_dangle]` is not stable yet (and may never be): https://github.com/rust-lang/rust/issues/34761.
 So, it cannot be used in this crate.
 
-This means that structs with internal references to the arena cannot be used with `TypedArena` in this crate,
-because the borrow checker will complain that the arena doesn't live long enough.
+This means that structs with internal references to the arena cannot be used within the `TypedArena` from this crate,
+because the borrow checker will complain that the arena doesn’t live long enough.
 Such an internal reference could for example look like this:
 
 ```rust
@@ -49,9 +49,10 @@ fn main() {
 }
 ```
 
-This will unfortunately not compile.
-However, you can use `DroplessArena` instead, as long as the stored type does not implement `Drop`.
-This means that types with internal references *and* a `Drop` implementation cannot be stored in any arena in this crate.
+This compiles with rustc’s `TypedArena` but not with this crate’s `TypedArena`.
+However, you can use `DroplessArena` instead (`DroplessArena` even allows reference *cycles*; see the documentation).
+The downside is, of course, that your allocated objects won’t be *dropped* then.
+This means that types with internal references *and* which need to be dropped cannot be stored in any arena in this crate.
 
 ### `intrinsics::assume`
 The original has this code:
@@ -70,13 +71,13 @@ The original has this code:
 slice[..len].assume_init_drop();
 ```
 
-This function isn't stable yet, so it was replaced by a manual implementation.
+This function isn’t stable yet, so it was replaced by a manual implementation, based on the unstable `assume_init_drop()` on Rust nightly.
 
 ### Simplifications in the macro
-The macro `declare_arena!` was originally written with the functionality in mind where structs have internal references to the arena.
+The macro `declare_arena!` was originally written primarily for the purpose where structs have internal references to the arena.
 For this purpose, it had a hard-coded lifetime parameter `'tcx`, which referred to the lifetime of the arena.
 This lifetime parameter was removed, because the intended use case is not supported by this crate anyway.
 
 Another simplification for the macro was to remove an optional first parameter for the sub-arenas.
 This parameter was not used in the macro itself.
-I'm not sure whether it still has a purpose in the original context of the rust compiler, but I couldn't divine one.
+I’m not sure whether it still has a purpose in the original context of the rust compiler, but I couldn’t divine one.

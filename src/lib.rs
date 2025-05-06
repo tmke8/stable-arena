@@ -655,13 +655,32 @@ pub struct IsNotCopy;
 ///
 /// There are three cases of interest.
 /// - Types that are `Copy`: these need not be specified in the arguments. They
-///   will use the `DroplessArena`.
+///   will use the `DroplessArena` (because `Copy` types cannot be `Drop`)
 /// - Types that are `!Copy` and `!Drop`: these must be specified in the
 ///   arguments. An empty `TypedArena` will be created for each one, but the
 ///   `DroplessArena` will always be used and the `TypedArena` will stay empty.
 ///   This is odd but harmless, because an empty arena allocates no memory.
 /// - Types that are `!Copy` and `Drop`: these must be specified in the
 ///   arguments. The `TypedArena` will be used for them.
+///
+/// # Usage
+///
+/// ```rust
+/// use std::cell::Cell;
+/// use stable_arena::{declare_arena};
+///
+/// // Creates a new type called `Arena`.
+/// declare_arena!([
+///     cells: Cell<i32>,  // `!Copy`, `!Drop`
+///     boxes: Box<i32>,  // `!Copy`, `Drop`
+/// ]);
+///
+/// let arena = Arena::default();
+/// let c: &Cell<i32> = arena.alloc(Cell::new(1));
+/// assert_eq!(c.get(), 1);
+/// let b = arena.alloc(Box::new(2));
+/// assert_eq!(**b, 2);
+/// ```
 ///
 #[macro_export]
 macro_rules! declare_arena {

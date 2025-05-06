@@ -301,7 +301,8 @@ fn test_declare_arena() {
 
     let arena = Arena::default();
 
-    let num = arena.alloc(1); // `Copy` types can be allocated without needing to be declared.
+    // `Copy` types that you want to allocate don't need to be mentioned in `declare_arena!`.
+    let num = arena.alloc(1);
     assert_eq!(num, &1);
 
     let slice = arena.alloc_slice(&[10, 15, 17]);
