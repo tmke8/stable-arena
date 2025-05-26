@@ -15,4 +15,8 @@ categories = ["memory-management"]
 readme = "README.md"
 
 [dependencies]
-smallvec = { version = "1.8.1", features = ["union"] }
+smallvec = { version = "1.8.1", features = ["union"], optional = true }
+
+[features]
+default = ["from-iter"]
+from-iter = ["dep:smallvec"]

@@ -64,6 +64,11 @@
 //! a.other.set(Some(b));
 //! b.other.set(Some(a));
 //! ```
+//!
+//! # Features
+//!
+//! - The `from-iter` feature enables the `alloc_from_iter` method on both arenas. This feature is
+//!   enabled by default.
 
 #![allow(clippy::mut_from_ref)] // Arena allocators are one place where this pattern is fine.
 
@@ -75,8 +80,10 @@ use std::mem::{self, MaybeUninit};
 use std::ptr::{self, NonNull};
 use std::{cmp, slice};
 
+#[cfg(feature = "from-iter")]
 use smallvec::SmallVec;
 
+#[cfg(feature = "from-iter")]
 /// This calls the passed function while ensuring it won't be inlined into the caller.
 #[inline(never)]
 #[cold]
@@ -149,6 +156,7 @@ impl<T> ArenaChunk<T> {
 ///
 /// The definition corresponds to the unstable method in the standard library.
 /// See https://github.com/rust-lang/rust/issues/63569 for the tracking issue.
+#[inline(always)]
 unsafe fn assume_init_drop<T>(this: &mut [MaybeUninit<T>]) {
     if !this.is_empty() {
         // SAFETY: the caller must guarantee that every element of `self`
@@ -198,7 +206,7 @@ impl<T> Default for TypedArena<T> {
 }
 
 impl<T> TypedArena<T> {
-    /// Allocates an object in the `TypedArena`, returning a reference to it.
+    /// Allocates an object in the `TypedArena`, returning a mutable reference to it.
     #[inline]
     pub fn alloc(&self, object: T) -> &mut T {
         if self.ptr == self.end {
@@ -223,6 +231,7 @@ impl<T> TypedArena<T> {
         }
     }
 
+    #[cfg(feature = "from-iter")]
     #[inline]
     fn can_allocate(&self, additional: usize) -> bool {
         // FIXME: this should *likely* use `offset_from`, but more
@@ -232,6 +241,7 @@ impl<T> TypedArena<T> {
         available_bytes >= additional_bytes
     }
 
+    #[cfg(feature = "from-iter")]
     #[inline]
     fn alloc_raw_slice(&self, len: usize) -> *mut T {
         assert!(mem::size_of::<T>() != 0);
@@ -250,10 +260,13 @@ impl<T> TypedArena<T> {
         start_ptr
     }
 
+    #[cfg(feature = "from-iter")]
     /// Allocates the elements of this iterator into a contiguous slice in the `TypedArena`.
     ///
     /// Note: for reasons of reentrancy and panic safety we collect into a `SmallVec<[_; 8]>` before
     /// storing the elements in the arena.
+    ///
+    /// This function is only available if the `from-iter` feature is enabled.
     #[inline]
     pub fn alloc_from_iter<I: IntoIterator<Item = T>>(&self, iter: I) -> &mut [T] {
         // Despite the similarlty with `DroplessArena`, we cannot reuse their fast case. The reason
@@ -464,7 +477,7 @@ impl DroplessArena {
     }
 
     #[inline]
-    pub fn alloc_raw(&self, layout: Layout) -> *mut u8 {
+    fn alloc_raw(&self, layout: Layout) -> *mut u8 {
         assert!(layout.size() != 0);
 
         // This loop executes once or twice: if allocation fails the first
@@ -499,6 +512,7 @@ impl DroplessArena {
         }
     }
 
+    /// Allocates an object in the `DroplessArena`, returning a mutable reference to it.
     #[inline]
     pub fn alloc<T>(&self, object: T) -> &mut T {
         assert!(!mem::needs_drop::<T>());
@@ -564,6 +578,7 @@ impl DroplessArena {
         unsafe { std::str::from_utf8_unchecked(slice) }
     }
 
+    #[cfg(feature = "from-iter")]
     /// # Safety
     ///
     /// The caller must ensure that `mem` is valid for writes up to `size_of::<T>() * len`, and that
@@ -596,6 +611,13 @@ impl DroplessArena {
         }
     }
 
+    #[cfg(feature = "from-iter")]
+    /// Allocates the elements of this iterator into a contiguous slice in the `DroplessArena`.
+    ///
+    /// Note: for reasons of reentrancy and panic safety we collect into a `SmallVec<[_; 8]>` before
+    /// storing the elements in the arena.
+    ///
+    /// This function is only available if the `from-iter` feature is enabled.
     #[inline]
     pub fn alloc_from_iter<T, I: IntoIterator<Item = T>>(&self, iter: I) -> &mut [T] {
         // Warning: this function is reentrant: `iter` could hold a reference to `&self` and
@@ -650,6 +672,7 @@ impl DroplessArena {
 pub struct IsCopy;
 pub struct IsNotCopy;
 
+#[cfg(feature = "from-iter")]
 /// Declare an `Arena` containing one dropless arena and many typed arenas (the
 /// types of the typed arenas are specified by the arguments).
 ///
@@ -682,6 +705,7 @@ pub struct IsNotCopy;
 /// assert_eq!(**b, 2);
 /// ```
 ///
+/// This macro is only available if the `from-iter` feature is enabled.
 #[macro_export]
 macro_rules! declare_arena {
     ([$($name:ident: $ty:ty,)*]) => {
@@ -708,6 +732,7 @@ macro_rules! declare_arena {
             fn allocate_on(self, arena: &Arena) -> &mut Self {
                 arena.dropless.alloc(self)
             }
+
             #[inline]
             #[allow(clippy::mut_from_ref)]
             fn allocate_from_iter(
@@ -717,9 +742,11 @@ macro_rules! declare_arena {
                 arena.dropless.alloc_from_iter(iter)
             }
         }
+
         $(
             impl ArenaAllocatable<$crate::IsNotCopy> for $ty {
                 #[inline]
+                #[allow(clippy::mut_from_ref)]
                 fn allocate_on(self, arena: &Arena) -> &mut Self {
                     if !::std::mem::needs_drop::<Self>() {
                         arena.dropless.alloc(self)
