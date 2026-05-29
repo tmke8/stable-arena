@@ -9,7 +9,7 @@ authors = [
     "Thomas Kehrenberg <tmke8@posteo.net>",
 ]
 license = "Apache-2.0 OR MIT"
-homepage = "https://github.com/tmke8/stable-arena"
+repository = "https://github.com/tmke8/stable-arena"
 keywords = ["arena", "allocator"]
 categories = ["memory-management"]
 readme = "README.md"
