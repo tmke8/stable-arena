@@ -1,4 +1,11 @@
+// The crate is `no_std`, but the test harness links `std`, so pull in the items the tests need
+// (including the `vec!` and `thread_local!` macros) that the `core` prelude doesn't provide.
+#[cfg(feature = "from-iter")]
+use std::boxed::Box;
 use std::cell::Cell;
+use std::string::{String, ToString};
+use std::vec::Vec;
+use std::{thread_local, vec};
 
 use super::{DroplessArena, TypedArena};
 

@@ -6,6 +6,8 @@ All credit goes to the Rust Project Developers.
 
 The crate defines two arena types: `TypedArena` and `DroplessArena`, one macro: `declare_arena!`, and two marker types: `IsCopy` and `IsNotCopy`.
 See the documentation on how to use them.
+
+The crate is `#![no_std]` (it depends only on `core` and `alloc`), so it can be used in `no_std` environments that have a global allocator.
 One of the modifications that was necessary to make it work on stable Rust is to remove the `#[may_dangle]` attribute from the `Drop` implementation of `TypedArena`,
 which has some unfortunate consequences, as described below.
 
@@ -63,6 +65,11 @@ unsafe { intrinsics::assume(end == align_down(end, DROPLESS_ALIGNMENT)) };
 ```
 
 This was replaced by `std::hint::assume_unchecked`, which is the stable equivalent since Rust 1.81.0.
+
+### `no_std` support
+The original is part of the compiler and freely uses `std`. This crate is `#![no_std]` instead: the
+`std::` imports were changed to `core::` and `alloc::` (and the macro emits `::core::` paths), with
+`Box`/`Vec` coming from `alloc`. This requires a global allocator but no other part of `std`.
 
 ### The never type `!` in `try_alloc_from_iter`
 The original expresses the infallible `alloc_from_iter` in terms of the fallible `try_alloc_from_iter`

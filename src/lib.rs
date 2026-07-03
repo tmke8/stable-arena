@@ -70,17 +70,24 @@
 //! - The `from-iter` feature enables the `alloc_from_iter` method on both arenas. This feature is
 //!   enabled by default.
 
+#![no_std]
 #![allow(clippy::mut_from_ref)] // Arena allocators are one place where this pattern is fine.
 
-use std::alloc::Layout;
-use std::cell::{Cell, RefCell};
+extern crate alloc;
+#[cfg(test)]
+extern crate std;
+
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::alloc::Layout;
+use core::cell::{Cell, RefCell};
 #[cfg(feature = "from-iter")]
-use std::convert::Infallible;
-use std::hint::assert_unchecked;
-use std::marker::PhantomData;
-use std::mem::{self, MaybeUninit};
-use std::ptr::{self, NonNull};
-use std::{cmp, slice};
+use core::convert::Infallible;
+use core::hint::assert_unchecked;
+use core::marker::PhantomData;
+use core::mem::{self, MaybeUninit};
+use core::ptr::{self, NonNull};
+use core::{cmp, slice};
 
 #[cfg(feature = "from-iter")]
 use smallvec::SmallVec;
@@ -575,7 +582,7 @@ impl DroplessArena {
         let slice = self.alloc_slice(string.as_bytes());
 
         // SAFETY: the result has a copy of the same valid UTF-8 bytes.
-        unsafe { std::str::from_utf8_unchecked(slice) }
+        unsafe { core::str::from_utf8_unchecked(slice) }
     }
 
     #[cfg(feature = "from-iter")]
@@ -740,7 +747,7 @@ macro_rules! declare_arena {
             #[allow(clippy::mut_from_ref)]
             fn allocate_from_iter(
                 arena: &Arena,
-                iter: impl ::std::iter::IntoIterator<Item = Self>,
+                iter: impl ::core::iter::IntoIterator<Item = Self>,
             ) -> &mut [Self];
         }
 
@@ -756,7 +763,7 @@ macro_rules! declare_arena {
             #[allow(clippy::mut_from_ref)]
             fn allocate_from_iter(
                 arena: &Arena,
-                iter: impl ::std::iter::IntoIterator<Item = Self>,
+                iter: impl ::core::iter::IntoIterator<Item = Self>,
             ) -> &mut [Self] {
                 arena.dropless.alloc_from_iter(iter)
             }
@@ -767,7 +774,7 @@ macro_rules! declare_arena {
                 #[inline]
                 #[allow(clippy::mut_from_ref)]
                 fn allocate_on(self, arena: &Arena) -> &mut Self {
-                    if !::std::mem::needs_drop::<Self>() {
+                    if !::core::mem::needs_drop::<Self>() {
                         arena.dropless.alloc(self)
                     } else {
                         arena.$name.alloc(self)
@@ -778,9 +785,9 @@ macro_rules! declare_arena {
                 #[allow(clippy::mut_from_ref)]
                 fn allocate_from_iter(
                     arena: &Arena,
-                    iter: impl ::std::iter::IntoIterator<Item = Self>,
+                    iter: impl ::core::iter::IntoIterator<Item = Self>,
                 ) -> &mut [Self] {
-                    if !::std::mem::needs_drop::<Self>() {
+                    if !::core::mem::needs_drop::<Self>() {
                         arena.dropless.alloc_from_iter(iter)
                     } else {
                         arena.$name.alloc_from_iter(iter)
@@ -799,7 +806,7 @@ macro_rules! declare_arena {
             // Any type that impls `Copy` can have slices be arena-allocated in the `DroplessArena`.
             #[inline]
             #[allow(clippy::mut_from_ref)]
-            pub fn alloc_slice<T: ::std::marker::Copy>(&self, value: &[T]) -> &mut [T] {
+            pub fn alloc_slice<T: ::core::marker::Copy>(&self, value: &[T]) -> &mut [T] {
                 if value.is_empty() {
                     return &mut [];
                 }
@@ -817,7 +824,7 @@ macro_rules! declare_arena {
             #[allow(clippy::mut_from_ref)]
             pub fn alloc_from_iter<T: ArenaAllocatable<C>, C>(
                 &self,
-                iter: impl ::std::iter::IntoIterator<Item = T>,
+                iter: impl ::core::iter::IntoIterator<Item = T>,
             ) -> &mut [T] {
                 T::allocate_from_iter(self, iter)
             }
