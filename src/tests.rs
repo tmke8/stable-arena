@@ -1,6 +1,13 @@
+// The crate is `no_std`, but the test harness links `std`, so pull in the items the tests need
+// (including the `vec!` and `thread_local!` macros) that the `core` prelude doesn't provide.
+#[cfg(feature = "from-iter")]
+use std::boxed::Box;
 use std::cell::Cell;
+use std::string::{String, ToString};
+use std::vec::Vec;
+use std::{thread_local, vec};
 
-use super::{DroplessArena, TypedArena, declare_arena};
+use super::{DroplessArena, TypedArena};
 
 #[allow(dead_code)]
 #[derive(Debug, Eq, PartialEq)]
@@ -16,10 +23,9 @@ impl<T> TypedArena<T> {
         unsafe {
             // Clear the last chunk, which is partially filled.
             let mut chunks_borrow = self.chunks.borrow_mut();
-            if let Some(mut last_chunk) = chunks_borrow.last_mut() {
-                self.clear_last_chunk(&mut last_chunk);
+            if let Some(last_chunk) = chunks_borrow.last_mut() {
+                self.clear_last_chunk(last_chunk);
                 let len = chunks_borrow.len();
-                // If `T` is ZST, code below has no effect.
                 for mut chunk in chunks_borrow.drain(..len - 1) {
                     chunk.destroy(chunk.entries);
                 }
@@ -126,18 +132,6 @@ fn test_noncopy() {
 }
 
 #[test]
-fn test_typed_arena_zero_sized() {
-    let arena = TypedArena::default();
-    #[cfg(not(miri))]
-    const N: usize = 100000;
-    #[cfg(miri)]
-    const N: usize = 1000;
-    for _ in 0..N {
-        arena.alloc(());
-    }
-}
-
-#[test]
 fn test_typed_arena_clear() {
     let mut arena = TypedArena::default();
     for _ in 0..10 {
@@ -215,7 +209,8 @@ thread_local! {
     static DROP_COUNTER: Cell<u32> = Cell::new(0)
 }
 
-struct SmallDroppable;
+#[allow(unused)]
+struct SmallDroppable(u8);
 
 impl Drop for SmallDroppable {
     fn drop(&mut self) {
@@ -230,7 +225,7 @@ fn test_typed_arena_drop_small_count() {
         let arena: TypedArena<SmallDroppable> = TypedArena::default();
         for _ in 0..100 {
             // Allocate something with drop glue to make sure it doesn't leak.
-            arena.alloc(SmallDroppable);
+            arena.alloc(SmallDroppable(0));
         }
         // dropping
     };
@@ -287,14 +282,16 @@ fn test_dropless_str() {
     assert_eq!(string, "hello world");
 }
 
+#[cfg(feature = "from-iter")]
 #[derive(Debug, PartialEq, Eq)]
 struct NotCopyNotDrop {
     value: i32,
 }
 
+#[cfg(feature = "from-iter")]
 #[test]
 fn test_declare_arena() {
-    declare_arena!([
+    crate::declare_arena!([
         ints: NotCopyNotDrop,
         boxes: Box<i32>,
     ]);

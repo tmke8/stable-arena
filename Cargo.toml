@@ -1,9 +1,9 @@
 [package]
 name = "stable-arena"
 description = "rustc's arena, adapted for stable Rust"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.95"
 authors = [
     "The Rust Project Developers",
     "Thomas Kehrenberg <tmke8@posteo.net>",
@@ -11,7 +11,7 @@ authors = [
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/tmke8/stable-arena"
 keywords = ["arena", "allocator"]
-categories = ["memory-management"]
+categories = ["memory-management", "no-std"]
 readme = "README.md"
 
 [dependencies]
