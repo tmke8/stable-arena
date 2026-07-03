@@ -7,7 +7,6 @@ All credit goes to the Rust Project Developers.
 The crate defines two arena types: `TypedArena` and `DroplessArena`, one macro: `declare_arena!`, and two marker types: `IsCopy` and `IsNotCopy`.
 See the documentation on how to use them.
 
-The crate is `#![no_std]` (it depends only on `core` and `alloc`), so it can be used in `no_std` environments that have a global allocator.
 One of the modifications that was necessary to make it work on stable Rust is to remove the `#[may_dangle]` attribute from the `Drop` implementation of `TypedArena`,
 which has some unfortunate consequences, as described below.
 
